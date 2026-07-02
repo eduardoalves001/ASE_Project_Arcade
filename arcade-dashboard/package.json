@@ -1,0 +1,14 @@
+{
+  "name": "arcade-dashboard",
+  "version": "1.0.0",
+  "description": "Online leaderboard + remote control dashboard for the ESP-Arcade console",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "mqtt": "^5.0.5",
+    "socket.io": "^4.7.2"
+  }
+}

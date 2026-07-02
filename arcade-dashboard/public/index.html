@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ESP-Arcade · Leaderboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0612; --panel:#150d24; --edge:#2a1c44;
+    --neon:#39ff14; --cyan:#19e6ff; --magenta:#ff2ed1; --amber:#ffb000;
+    --txt:#d8d0ff; --dim:#7a6ea8;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; background:
+      radial-gradient(circle at 50% -10%, #241640 0%, var(--bg) 60%);
+    color:var(--txt); font-family:'VT323',monospace; font-size:20px;
+    display:flex; justify-content:center; padding:28px 16px 60px;
+  }
+  /* faint scanlines for the CRT feel */
+  body::after{content:"";position:fixed;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(transparent 0 2px, rgba(0,0,0,.18) 2px 4px);
+    mix-blend-mode:multiply;}
+  .wrap{width:100%;max-width:760px;position:relative;z-index:1}
+  h1{font-family:'Press Start 2P',monospace;font-size:26px;letter-spacing:1px;
+    text-align:center;margin:0 0 4px;color:var(--neon);
+    text-shadow:0 0 8px rgba(57,255,20,.6),0 0 22px rgba(57,255,20,.3);}
+  .sub{text-align:center;color:var(--dim);margin-bottom:22px}
+  .conn{display:inline-flex;align-items:center;gap:8px}
+  .dot{width:11px;height:11px;border-radius:50%;background:#555;box-shadow:0 0 8px #000}
+  .dot.on{background:var(--neon);box-shadow:0 0 10px var(--neon)}
+  .dot.off{background:#ff3b3b;box-shadow:0 0 10px #ff3b3b}
+  .panel{background:linear-gradient(180deg,var(--panel),#0f0a1d);
+    border:2px solid var(--edge);border-radius:12px;padding:18px 20px;margin-bottom:18px;
+    box-shadow:0 0 0 1px #000 inset, 0 8px 30px rgba(0,0,0,.5);}
+  .panel h2{font-family:'Press Start 2P',monospace;font-size:12px;color:var(--cyan);
+    margin:0 0 14px;letter-spacing:1px;text-transform:uppercase}
+  /* now playing */
+  .now{display:flex;flex-wrap:wrap;gap:18px;align-items:center;justify-content:space-between}
+  .now .big{font-family:'Press Start 2P',monospace;font-size:20px;color:var(--amber)}
+  .now .score{font-size:60px;line-height:.9;color:#fff;text-shadow:0 0 12px rgba(255,255,255,.4)}
+  .badges{display:flex;gap:10px;flex-wrap:wrap}
+  .badge{border:1px solid var(--edge);border-radius:20px;padding:4px 14px;color:var(--dim)}
+  .badge b{color:var(--txt)}
+  .badge.hard{border-color:#ff3b3b;color:#ff7a7a;text-shadow:0 0 8px rgba(255,59,59,.5)}
+  /* leaderboard */
+  table{width:100%;border-collapse:collapse}
+  td,th{padding:10px 8px;text-align:left;border-bottom:1px solid var(--edge)}
+  th{color:var(--dim);font-size:15px;text-transform:uppercase;letter-spacing:1px}
+  .rank{font-family:'Press Start 2P',monospace;font-size:11px;color:var(--magenta)}
+  .gname{font-size:24px}
+  .hi{font-family:'Press Start 2P',monospace;font-size:14px;color:var(--neon);text-align:right}
+  tr.active{background:rgba(25,230,255,.07)}
+  tr.active .gname{color:var(--cyan)}
+  /* controls */
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  button{font-family:'VT323',monospace;font-size:21px;cursor:pointer;color:var(--txt);
+    background:#1d1233;border:2px solid var(--edge);border-radius:10px;padding:12px 8px;
+    transition:.12s;letter-spacing:1px}
+  button:hover{border-color:var(--cyan);color:#fff;box-shadow:0 0 14px rgba(25,230,255,.35);transform:translateY(-1px)}
+  button:active{transform:translateY(1px)}
+  button.primary{border-color:var(--neon);color:var(--neon)}
+  button.danger{border-color:#ff3b3b;color:#ff7a7a}
+  .hint{color:var(--dim);font-size:16px;margin-top:12px;text-align:center}
+  /* sleep overlay */
+  .overlay{position:fixed;inset:0;z-index:5;display:none;align-items:center;justify-content:center;
+    flex-direction:column;background:rgba(5,3,12,.86);backdrop-filter:blur(2px)}
+  .overlay.show{display:flex}
+  .overlay .z{font-family:'Press Start 2P',monospace;font-size:40px;color:var(--cyan);
+    text-shadow:0 0 18px var(--cyan)}
+  .overlay p{color:var(--dim)}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>ESP-ARCADE</h1>
+    <div class="sub"><span class="conn"><span id="dot" class="dot off"></span><span id="connTxt">connecting…</span></span></div>
+
+    <div class="panel">
+      <h2>Now Playing</h2>
+      <div class="now">
+        <div>
+          <div class="big" id="screen">MENU</div>
+          <div id="gameLine" style="color:var(--dim)">selecting a game…</div>
+        </div>
+        <div style="text-align:center">
+          <div class="score" id="liveScore">0</div>
+          <div style="color:var(--dim);font-size:15px">SCORE</div>
+        </div>
+        <div class="badges">
+          <div class="badge">TEMP <b id="temp">--</b>°C</div>
+          <div class="badge">HUM <b id="hum">--</b>%</div>
+          <div class="badge" id="modeBadge">MODE <b id="mode">--</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Leaderboard</h2>
+      <table>
+        <thead><tr><th style="width:60px">Rank</th><th>Game</th><th style="text-align:right">High Score</th></tr></thead>
+        <tbody>
+          <tr id="row-snake"><td class="rank">#1</td><td class="gname">Snake</td><td class="hi" id="hi-snake">0</td></tr>
+          <tr id="row-pong"><td class="rank">#2</td><td class="gname">Pong</td><td class="hi" id="hi-pong">0</td></tr>
+          <tr id="row-dino"><td class="rank">#3</td><td class="gname">Dino Run</td><td class="hi" id="hi-dino">0</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Remote Control</h2>
+      <div class="grid">
+        <button data-cmd="start_snake" class="primary">▶ SNAKE</button>
+        <button data-cmd="start_pong" class="primary">▶ PONG</button>
+        <button data-cmd="start_dino" class="primary">▶ DINO</button>
+        <button data-cmd="select">SELECT (A)</button>
+        <button data-cmd="menu">MENU</button>
+        <button data-cmd="reset_scores" class="danger">RESET SCORES</button>
+      </div>
+      <div class="hint">Buttons publish to <code>arcade/command</code>; the console reacts as if you pressed a button.</div>
+    </div>
+  </div>
+
+  <div class="overlay" id="sleepOverlay">
+    <div class="z">Zzz</div>
+    <p>The console is in light sleep.</p>
+    <p>Press <b>Button C</b> on the device to wake it.</p>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const $ = (id) => document.getElementById(id);
+    const games = ['snake','pong','dino'];
+
+    socket.on('connect', () => { $('dot').className='dot on'; $('connTxt').textContent='dashboard online'; });
+    socket.on('disconnect', () => { $('dot').className='dot off'; $('connTxt').textContent='disconnected'; });
+
+    socket.on('arcade_status', (d) => {
+      $('screen').textContent   = (d.screen || 'menu').toUpperCase();
+      $('liveScore').textContent= d.score ?? 0;
+      $('temp').textContent     = (d.temp ?? 0).toFixed ? d.temp.toFixed(1) : d.temp;
+      $('hum').textContent      = (d.hum ?? 0).toFixed ? d.hum.toFixed(0) : d.hum;
+      $('mode').textContent     = d.hard_mode ? 'HARD' : 'NORMAL';
+      $('modeBadge').className   = 'badge' + (d.hard_mode ? ' hard' : '');
+
+      $('hi-snake').textContent = d.high_snake ?? 0;
+      $('hi-pong').textContent  = d.high_pong ?? 0;
+      $('hi-dino').textContent  = d.high_dino ?? 0;
+
+      const playing = d.screen === 'play';
+      $('gameLine').textContent = playing
+        ? 'playing ' + (d.game || '').toUpperCase()
+        : (d.screen === 'gameover' ? 'game over — ' + (d.game||'').toUpperCase() : 'selecting a game…');
+
+      games.forEach(g => {
+        const row = $('row-' + g);
+        row.classList.toggle('active', playing && d.game === g);
+      });
+
+      $('sleepOverlay').classList.toggle('show', !!d.is_sleeping);
+    });
+
+    document.querySelectorAll('button[data-cmd]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const action = btn.getAttribute('data-cmd');
+        if (action === 'reset_scores' && !confirm('Reset all high scores on the device?')) return;
+        socket.emit('command', { action });
+      });
+    });
+  </script>
+</body>
+</html>
