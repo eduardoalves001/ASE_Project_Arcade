@@ -42,7 +42,7 @@ static void handle_command(const char *cmd)
     uint32_t id;
     bool ok = true;
     if      (strcmp(cmd, "menu")         == 0) id = REMOTE_MENU;
-    else if (strcmp(cmd, "start_snake")  == 0) id = REMOTE_START_SNAKE;
+    else if (strcmp(cmd, "start_flappy") == 0) id = REMOTE_START_FLAPPY;
     else if (strcmp(cmd, "start_pong")   == 0) id = REMOTE_START_PONG;
     else if (strcmp(cmd, "start_dino")   == 0) id = REMOTE_START_DINO;
     else if (strcmp(cmd, "select")       == 0) id = REMOTE_SELECT;
@@ -154,7 +154,7 @@ static const char *screen_str(screen_t s)
 static const char *game_str(game_id_t g)
 {
     switch (g) {
-        case GAME_SNAKE: return "snake";
+        case GAME_FLAPPY: return "flappy";
         case GAME_PONG:  return "pong";
         case GAME_DINO:  return "dino";
         default:         return "?";
@@ -207,15 +207,13 @@ void net_task(void *pvParameters)
         char payload[384];
         snprintf(payload, sizeof(payload),
                  "{\"screen\":\"%s\",\"game\":\"%s\",\"score\":%lu,"
-                 "\"high_snake\":%lu,\"high_pong\":%lu,\"high_dino\":%lu,"
-                 "\"temp\":%.1f,\"hum\":%.1f,\"hard_mode\":%s,\"is_sleeping\":%s}",
+                 "\"high_flappy\":%lu,\"high_pong\":%lu,\"high_dino\":%lu,"
+                 "\"is_sleeping\":%s}",
                  screen_str(s.screen), game_str(s.current_game),
                  (unsigned long)s.score,
-                 (unsigned long)s.high[GAME_SNAKE],
+                 (unsigned long)s.high[GAME_FLAPPY],
                  (unsigned long)s.high[GAME_PONG],
                  (unsigned long)s.high[GAME_DINO],
-                 s.temp, s.hum,
-                 s.hard_mode   ? "true" : "false",
                  s.is_sleeping ? "true" : "false");
 
         ESP_LOGD(TAG, "MQTT status: %s", payload);

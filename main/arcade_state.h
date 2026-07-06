@@ -5,7 +5,7 @@
  * Shared application state for the ESP-Arcade console.
  *
  * One arcade_state_t instance (g_state) is the single source of truth that the
- * game, display, sensor and network FreeRTOS tasks read and write. Every access
+ * game, display and network FreeRTOS tasks read and write. Every access
  * must be wrapped by state_mutex. Button presses arrive as GPIO numbers (or
  * REMOTE_* sentinels) through button_evt_queue from the ISR / MQTT layer.
  */
@@ -25,9 +25,9 @@
 /* ---- Games ---- */
 #define NUM_GAMES        3
 typedef enum {
-    GAME_SNAKE = 0,
-    GAME_PONG  = 1,
-    GAME_DINO  = 2,
+    GAME_FLAPPY = 0,
+    GAME_PONG   = 1,
+    GAME_DINO   = 2,
 } game_id_t;
 
 typedef enum {
@@ -43,36 +43,31 @@ typedef enum {
 #define EVT_REMOTE_BASE 1000
 enum {
     REMOTE_MENU         = EVT_REMOTE_BASE + 0,
-    REMOTE_START_SNAKE  = EVT_REMOTE_BASE + 1,
+    REMOTE_START_FLAPPY = EVT_REMOTE_BASE + 1,
     REMOTE_START_PONG   = EVT_REMOTE_BASE + 2,
     REMOTE_START_DINO   = EVT_REMOTE_BASE + 3,
     REMOTE_RESET_SCORES = EVT_REMOTE_BASE + 4,
     REMOTE_SELECT       = EVT_REMOTE_BASE + 5,  /* behaves like Button A */
 };
 
-/* Ambient temperature (deg C) at or above which "hard mode" kicks in. */
-#define HARD_TEMP_C      28.0f
-
-/* ===================== Snake ===================== */
-#define SNAKE_CELL       5
-#define SNAKE_GRID_Y0    14                       /* below the score header */
-#define SNAKE_COLS       (SCR_W / SNAKE_CELL)      /* 32 */
-#define SNAKE_ROWS       ((SCR_H - SNAKE_GRID_Y0) / SNAKE_CELL) /* 13 */
-#define SNAKE_MAX_LEN    96
+/* ===================== Flappy ===================== */
+#define FLAPPY_BIRD_X    30
+#define FLAPPY_BIRD_W    8
+#define FLAPPY_BIRD_H    6
+#define FLAPPY_TOP       10          /* play area starts below the score header */
+#define FLAPPY_NUM_PIPES 2
+#define FLAPPY_PIPE_W    10
+#define FLAPPY_GAP_H     28
 
 typedef struct {
-    int8_t   x[SNAKE_MAX_LEN];
-    int8_t   y[SNAKE_MAX_LEN];
-    int      len;
-    int      dir;          /* 0=up 1=right 2=down 3=left */
-    int      next_dir;
-    int      food_x, food_y;
-    int      tail_x, tail_y;   /* cell freed on the last move (for the renderer) */
-    bool     grew;             /* last move grew the body (no tail to erase) */
-    uint32_t step_id;          /* increments once per logical move */
-    int      tick_acc;         /* tick accumulator for step pacing */
-    uint32_t rng;              /* xorshift state for food placement */
-} snake_t;
+    int      y_fp;                      /* bird top y, fixed point (x8) */
+    int      vy;                        /* vertical velocity, fixed point (x8) */
+    int      pipe_x[FLAPPY_NUM_PIPES];
+    int      gap_y[FLAPPY_NUM_PIPES];   /* top of the gap opening */
+    bool     passed[FLAPPY_NUM_PIPES];  /* pipe already scored */
+    bool     started;                   /* physics frozen until the first flap */
+    uint32_t rng;                       /* xorshift state for gap placement */
+} flappy_t;
 
 /* ===================== Pong ===================== */
 #define PONG_PADDLE_H    18
@@ -116,15 +111,11 @@ typedef struct {
     uint32_t  high[NUM_GAMES];  /* persisted high scores */
     bool      new_high;         /* the run that just ended beat the record */
 
-    float     temp;             /* last DHT20 temperature */
-    float     hum;              /* last DHT20 humidity */
-    bool      hard_mode;        /* derived from temp >= HARD_TEMP_C */
-
     bool      is_sleeping;
     uint32_t  frame;            /* free-running game tick counter */
     bool      dirty_full;       /* renderer must repaint the whole screen */
 
-    snake_t   snake;
+    flappy_t  flappy;
     pong_t    pong;
     dino_t    dino;
 } arcade_state_t;

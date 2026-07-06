@@ -1,5 +1,5 @@
 {
-  "brokerUrl": "mqtts://192.168.1.153:8883",
+  "brokerUrl": "mqtts://10.118.117.215:8883",
   "caFile": "../main/mqtt_broker_ca.pem",
   "username": "arcade",
   "password": "arcade-local-2026"

@@ -3,7 +3,7 @@
 
 /*
  * The arcade "brain": a single FreeRTOS task that runs the menu state machine
- * and the per-game simulation (Snake, Pong, Dino Run). It reads the
+ * and the per-game simulation (Flappy, Pong, Dino Run). It reads the
  * potentiometer + button queue, mutates g_state under state_mutex, persists
  * high scores to the SD card, and asks the network task to publish on changes.
  */

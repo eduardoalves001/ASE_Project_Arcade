@@ -11,7 +11,7 @@ const io = new Server(server);
 
 /* Commands the dashboard is allowed to forward to the console. */
 const allowedCommands = new Set([
-    'menu', 'start_snake', 'start_pong', 'start_dino', 'select', 'reset_scores'
+    'menu', 'start_flappy', 'start_pong', 'start_dino', 'select', 'reset_scores'
 ]);
 
 const configPath = path.join(__dirname, 'mqtt-config.json');

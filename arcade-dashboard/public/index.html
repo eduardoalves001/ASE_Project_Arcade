@@ -89,11 +89,6 @@
           <div class="score" id="liveScore">0</div>
           <div style="color:var(--dim);font-size:15px">SCORE</div>
         </div>
-        <div class="badges">
-          <div class="badge">TEMP <b id="temp">--</b>°C</div>
-          <div class="badge">HUM <b id="hum">--</b>%</div>
-          <div class="badge" id="modeBadge">MODE <b id="mode">--</b></div>
-        </div>
       </div>
     </div>
 
@@ -102,7 +97,7 @@
       <table>
         <thead><tr><th style="width:60px">Rank</th><th>Game</th><th style="text-align:right">High Score</th></tr></thead>
         <tbody>
-          <tr id="row-snake"><td class="rank">#1</td><td class="gname">Snake</td><td class="hi" id="hi-snake">0</td></tr>
+          <tr id="row-flappy"><td class="rank">#1</td><td class="gname">Flappy</td><td class="hi" id="hi-flappy">0</td></tr>
           <tr id="row-pong"><td class="rank">#2</td><td class="gname">Pong</td><td class="hi" id="hi-pong">0</td></tr>
           <tr id="row-dino"><td class="rank">#3</td><td class="gname">Dino Run</td><td class="hi" id="hi-dino">0</td></tr>
         </tbody>
@@ -112,7 +107,7 @@
     <div class="panel">
       <h2>Remote Control</h2>
       <div class="grid">
-        <button data-cmd="start_snake" class="primary">▶ SNAKE</button>
+        <button data-cmd="start_flappy" class="primary">▶ FLAPPY</button>
         <button data-cmd="start_pong" class="primary">▶ PONG</button>
         <button data-cmd="start_dino" class="primary">▶ DINO</button>
         <button data-cmd="select">SELECT (A)</button>
@@ -126,14 +121,14 @@
   <div class="overlay" id="sleepOverlay">
     <div class="z">Zzz</div>
     <p>The console is in light sleep.</p>
-    <p>Press <b>Button C</b> on the device to wake it.</p>
+    <p>Press <b>the button on the breadboard</b> to wake it.</p>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
     const $ = (id) => document.getElementById(id);
-    const games = ['snake','pong','dino'];
+    const games = ['flappy','pong','dino'];
 
     socket.on('connect', () => { $('dot').className='dot on'; $('connTxt').textContent='dashboard online'; });
     socket.on('disconnect', () => { $('dot').className='dot off'; $('connTxt').textContent='disconnected'; });
@@ -141,14 +136,10 @@
     socket.on('arcade_status', (d) => {
       $('screen').textContent   = (d.screen || 'menu').toUpperCase();
       $('liveScore').textContent= d.score ?? 0;
-      $('temp').textContent     = (d.temp ?? 0).toFixed ? d.temp.toFixed(1) : d.temp;
-      $('hum').textContent      = (d.hum ?? 0).toFixed ? d.hum.toFixed(0) : d.hum;
-      $('mode').textContent     = d.hard_mode ? 'HARD' : 'NORMAL';
-      $('modeBadge').className   = 'badge' + (d.hard_mode ? ' hard' : '');
 
-      $('hi-snake').textContent = d.high_snake ?? 0;
-      $('hi-pong').textContent  = d.high_pong ?? 0;
-      $('hi-dino').textContent  = d.high_dino ?? 0;
+      $('hi-flappy').textContent = d.high_flappy ?? 0;
+      $('hi-pong').textContent   = d.high_pong ?? 0;
+      $('hi-dino').textContent   = d.high_dino ?? 0;
 
       const playing = d.screen === 'play';
       $('gameLine').textContent = playing

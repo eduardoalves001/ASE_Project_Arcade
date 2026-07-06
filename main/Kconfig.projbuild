@@ -2,13 +2,13 @@ menu "ESP-Arcade WiFi Configuration"
 
     config ESP_WIFI_SSID
         string "WiFi SSID"
-        default "Mi 11 Lite 5G"
+        default "Pixel do Edu"
         help
             SSID (network name) for the ESP-Arcade to connect to.
 
     config ESP_WIFI_PASSWORD
         string "WiFi Password"
-        default "1234567890"
+        default "passwordASE"
         help
             WiFi password (WPA or WPA2) for the ESP-Arcade to use.
 

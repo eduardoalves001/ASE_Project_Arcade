@@ -2,31 +2,33 @@
 
 This repository contains an Embedded Systems Architecture (ASE) project for 2025/26:
 a hardware retro **arcade console** built on the ESP32-C6. It runs three classic
-mini-games on a tiny TFT, keeps high scores on an SD card, reacts to the ambient
-temperature, sleeps to save power, and reports an **online leaderboard** to a secure
+mini-games on a tiny TFT, keeps high scores on an SD card, gives LED feedback on
+every point scored, sleeps to save power, and reports an **online leaderboard** to a secure
 web dashboard over MQTT/TLS.
 
-> This is a different application built on the *same breadboard wiring* used by the
-> "Interactive IoT Virtual Pet" project: same ESP32-C6, same ST7735 + SD on a shared
-> SPI bus, same DHT20, same potentiometer, same three buttons and LED. Only the
-> firmware application and the dashboard are new.
+> The application, firmware and dashboard were written from scratch for this
+> project, on a standard breadboard wiring for this hardware kit: ESP32-C6,
+> ST7735 + SD sharing one SPI bus, potentiometer, push button and LED
+> (see `circuit.png`).
 
 ## Games
 
 | Game | Goal | Controls |
 |------|------|----------|
-| **Snake** | Eat food, grow, don't hit a wall or yourself | Button A = turn left, Button C = turn right |
+| **Flappy** | Fly through the gaps between the pipes | Button A = flap |
 | **Pong** | Survival rally vs. an AI paddle; 5 misses ends the run | Potentiometer = move paddle |
 | **Dino Run** | Endless runner, jump the obstacles, distance = score | Button A = jump |
 
-Button **B** quits the current game (the score still counts toward the record).
+**One-button design:** the whole console is playable with just Button A plus the
+potentiometer. **Hold Button A for ~5 s** to quit back to the menu from anywhere
+(a quit run still counts toward the record). Buttons B (give up) and C (menu on
+game over) are optional extras if wired.
 
 ## Hardware Map
 
 - ESP32-C6 DevKitC-1
 - ST7735 TFT display (160x80) on SPI2
 - SD card on the same SPI2 bus
-- DHT20 temperature/humidity sensor on I2C
 - Potentiometer on ADC1
 - Three buttons and one status LED
 
@@ -35,7 +37,6 @@ Main pins (unchanged from the original board wiring — see `circuit.png`):
 - TFT/SD SPI: MOSI GPIO 19, MISO GPIO 20, CLK GPIO 21
 - TFT: CS GPIO 22, DC GPIO 2, RST GPIO 3, BL GPIO 15
 - SD card: CS GPIO 18
-- DHT20: SDA GPIO 6, SCL GPIO 7
 - Potentiometer: GPIO 1
 - Button A: GPIO 23, Button B: GPIO 0, Button C: GPIO 4
 - Status LED: GPIO 5
@@ -45,10 +46,9 @@ Main pins (unchanged from the original board wiring — see `circuit.png`):
 The firmware is split into focused FreeRTOS tasks that share one `arcade_state_t`
 guarded by `state_mutex`:
 
-- `sensor_task` (`sensors.c`): reads the DHT20 every second into `temp`/`hum`.
-- `game_task` (`games.c`): the brain — menu state machine + Snake/Pong/Dino
-  simulation. Reads the potentiometer and the button event queue, persists high
-  scores, and manages light sleep.
+- `game_task` (`games.c`): the brain — menu state machine + Flappy/Pong/Dino
+  simulation. Reads the potentiometer and the button event queue, detects the
+  Button A hold gesture, persists high scores, and manages light sleep.
 - `display_task` (`display_arcade.c`): the only task that drives the SPI display,
   using a dirty-rectangle strategy so the 160x80 panel does not flicker.
 - `net_task` (`network_mqtt.c`): connects to secure MQTT, publishes `arcade/status`,
@@ -61,20 +61,20 @@ single, uniform input path.
 ## Controls Summary
 
 - **Menu:** turn the potentiometer to highlight a game, Button A to start it.
-- **Snake:** A = turn left, C = turn right.
+- **Flappy:** A = flap (the run starts on the first flap).
 - **Pong:** potentiometer moves your paddle.
 - **Dino:** A = jump.
-- **Any game:** B = give up and see the score.
-- **Game over:** A = play again, B/C = back to menu.
+- **Anywhere:** hold A for ~5 s = quit to the menu (the score still counts).
+- **Game over:** A = play again; hold A = menu (B/C also go to the menu if wired).
 - **Sleep:** after 30 s idle on the menu the console enters Light Sleep; press
-  Button C to wake it.
+  Button A to wake it.
 
-## Ambient "Hard Mode"
+## Score LED
 
-The DHT20 temperature feeds the difficulty: at or above `HARD_TEMP_C` (28 °C) the
-console switches to **hard mode** — games run faster and the status **LED turns on**.
-The dashboard shows a red `HARD!` badge. This demonstrates a real sensor influencing
-game logic.
+The status LED gives instant physical feedback while playing: it pulses for
+~120 ms every time the score increases — one blink per pipe passed in Flappy,
+per rally survived in Pong, and a near-continuous glow as distance accumulates
+in Dino Run.
 
 ## High Score Persistence
 
@@ -105,7 +105,7 @@ Test the broker locally:
 
 ```bash
 mosquitto_sub -h <laptop-ip> -p 8883 --cafile .local/mqtt-certs/arcade-ca.crt -u arcade -P arcade-local-2026 -t arcade/status -v
-mosquitto_pub -h <laptop-ip> -p 8883 --cafile .local/mqtt-certs/arcade-ca.crt -u arcade -P arcade-local-2026 -t arcade/command -m start_snake
+mosquitto_pub -h <laptop-ip> -p 8883 --cafile .local/mqtt-certs/arcade-ca.crt -u arcade -P arcade-local-2026 -t arcade/command -m start_flappy
 ```
 
 ## Wi-Fi Configuration
@@ -139,10 +139,10 @@ npm start
 ```
 
 Open `http://localhost:3000`. The dashboard shows the live screen/score, the three
-high scores, the ambient temperature/hard-mode state, and remote buttons that publish
+high scores, and remote buttons that publish
 to `arcade/command`:
 
-- `start_snake` / `start_pong` / `start_dino` — start a game on the device.
+- `start_flappy` / `start_pong` / `start_dino` — start a game on the device.
 - `select` — acts like Button A (start / replay).
 - `menu` — return to the menu.
 - `reset_scores` — clear all high scores on the device.
@@ -152,7 +152,7 @@ to `arcade/command`:
 `arcade/status` publishes JSON:
 
 ```json
-{"screen":"play","game":"snake","score":12,
- "high_snake":40,"high_pong":18,"high_dino":233,
- "temp":24.6,"hum":51.0,"hard_mode":false,"is_sleeping":false}
+{"screen":"play","game":"flappy","score":12,
+ "high_flappy":40,"high_pong":18,"high_dino":233,
+ "is_sleeping":false}
 ```

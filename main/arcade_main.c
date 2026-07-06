@@ -12,18 +12,21 @@
 #include "board_pins.h"
 #include "arcade_state.h"
 #include "storage_sd.h"
-#include "sensors.h"
 #include "games.h"
 #include "display_arcade.h"
 #include "network_mqtt.h"
 
-#include "driver_dht20.h"
 #include "st7735.h"
 #include "driver/sdspi_host.h"
 #include "sdmmc_cmd.h"
 #include "esp_vfs_fat.h"
 
 static const char *TAG = "Arcade";
+
+/* Set to 1 to enable Wi-Fi + MQTT leaderboard. Kept off for now: the board is
+ * not on the configured hotspot, and the Wi-Fi current spikes can brown out a
+ * marginal breadboard supply and glitch the display. */
+#define ARCADE_ENABLE_WIFI 1
 
 static void IRAM_ATTR gpio_isr_handler(void *arg)
 {
@@ -45,7 +48,7 @@ void app_main(void)
     /* shared state */
     memset(&g_state, 0, sizeof(g_state));
     g_state.screen       = SCREEN_MENU;
-    g_state.current_game = GAME_SNAKE;
+    g_state.current_game = GAME_FLAPPY;
     state_mutex      = xSemaphoreCreateMutex();
     button_evt_queue = xQueueCreate(10, sizeof(uint32_t));
 
@@ -78,11 +81,6 @@ void app_main(void)
     adc_oneshot_chan_cfg_t adcChanCfg = { .atten = ADC_ATTEN_DB_12, .bitwidth = ADC_BITWIDTH_DEFAULT };
     adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL, &adcChanCfg);
 
-    /* DHT20 on I2C */
-    static i2c_master_bus_handle_t busHandle;
-    static i2c_master_dev_handle_t dht20Handle;
-    dht20_init(&busHandle, &dht20Handle, DHT20_ADDR, I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO, I2C_MASTER_FREQ_HZ);
-
     /* shared SPI2 bus (TFT + SD card) */
     spi_bus_config_t buscfg = {
         .mosi_io_num   = PIN_MOSI,
@@ -94,7 +92,7 @@ void app_main(void)
     };
     ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
 
-    /* SD card over SPI */
+    /* SD card over SPI (single mount attempt — the known-good version). */
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
         .format_if_mount_failed = true,
         .max_files = 5,
@@ -131,13 +129,16 @@ void app_main(void)
     st7735_draw_string(28, 34, "ESP-ARCADE", ST7735_YELLOW, ST7735_BLACK, 1);
 
     /* tasks */
-    xTaskCreate(sensor_task,  "sensor_task",  4096, (void *)&dht20Handle, 5, NULL);
     xTaskCreate(game_task,    "game_task",    8192, NULL, 6, NULL);
     xTaskCreate(display_task, "display_task", 8192, NULL, 5, NULL);
 
     /* Wi-Fi + MQTT leaderboard (games keep running even with no network) */
+#if ARCADE_ENABLE_WIFI
     wifi_init_sta();
     xTaskCreate(net_task, "net_task", 8192, NULL, 4, &net_task_handle);
+#else
+    ESP_LOGI(TAG, "Wi-Fi disabled (ARCADE_ENABLE_WIFI=0): games only, no leaderboard.");
+#endif
 
     ESP_LOGI(TAG, "ESP-Arcade initialized.");
 }

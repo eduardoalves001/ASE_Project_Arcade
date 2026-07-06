@@ -76,11 +76,31 @@ void dht20_read_data(i2c_master_dev_handle_t sensorHandle, float* pTemperature, 
 void dht20_read_data_after_wait(i2c_master_dev_handle_t sensorHandle, float* pTemperature, float* pHumidity)
 {
     dht20_trigger_measurement(sensorHandle);
-    
+
     // Manual delay of 80ms as per datasheet
     vTaskDelay(pdMS_TO_TICKS(80));
-    
+
     // Optional: could loop check dht20_is_ready logic here for robustness, but strict delay usually works.
-    
+
     dht20_read_data(sensorHandle, pTemperature, pHumidity);
+}
+
+esp_err_t dht20_read_safe(i2c_master_dev_handle_t sensorHandle, float* pTemperature, float* pHumidity)
+{
+    // Finite 100ms timeouts so a missing sensor fails fast instead of blocking.
+    uint8_t trigger[3] = {DHT20_CMD_TRIGGER_MEASUREMENT, DHT20_CMD_TRIGGER_DATA_1, DHT20_CMD_TRIGGER_DATA_2};
+    esp_err_t err = i2c_master_transmit(sensorHandle, trigger, sizeof(trigger), 100);
+    if (err != ESP_OK) return err;
+
+    vTaskDelay(pdMS_TO_TICKS(80));
+
+    uint8_t data[7];
+    err = i2c_master_receive(sensorHandle, data, sizeof(data), 100);
+    if (err != ESP_OK) return err;
+
+    uint32_t raw_humid = ((uint32_t)data[1] << 12) | ((uint32_t)data[2] << 4) | (((uint32_t)data[3] & 0xF0) >> 4);
+    uint32_t raw_temp = (((uint32_t)data[3] & 0x0F) << 16) | ((uint32_t)data[4] << 8) | (uint32_t)data[5];
+    if (pHumidity)    *pHumidity = ((float)raw_humid / 1048576.0f) * 100.0f;
+    if (pTemperature) *pTemperature = ((float)raw_temp / 1048576.0f) * 200.0f - 50.0f;
+    return ESP_OK;
 }

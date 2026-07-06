@@ -2,6 +2,7 @@
 #define __driver_dht20_H__
 
 #include "driver/i2c_master.h"
+#include "esp_err.h"
 
 #define DHT20_ADDR                  0x38     // Default I2C address for DHT20
 #define DHT20_SCL_DFLT_FREQ_HZ      100000   // Typical I2C frequency (100kHz)
@@ -38,6 +39,14 @@ void dht20_free(i2c_master_bus_handle_t busHandle,
  * @param[out] pHumidity Pointer to store humidity (%)
  */
 void dht20_read_data_after_wait(i2c_master_dev_handle_t sensorHandle, float* pTemperature, float* pHumidity);
+
+/**
+ * @brief Non-aborting read. Returns an error instead of asserting, so the
+ * application can tolerate a missing/disconnected DHT20.
+ *
+ * @return ESP_OK on success, or the underlying I2C error.
+ */
+esp_err_t dht20_read_safe(i2c_master_dev_handle_t sensorHandle, float* pTemperature, float* pHumidity);
 
 // Lower level functions for finer control if needed, matching TC74 style
 

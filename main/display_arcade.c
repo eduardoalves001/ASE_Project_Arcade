@@ -39,72 +39,87 @@ static void draw_menu_row(int i, bool selected, const arcade_state_t *s)
 
 static void render_menu(const arcade_state_t *s)
 {
-    static int  prev_index = -1;
-    static int  prev_temp  = -999;
-    static bool prev_hard  = false;
+    static int prev_index = -1;
 
     if (s->dirty_full) {
         st7735_fill_screen(ST7735_BLACK);
         draw_centered(2, "ESP-ARCADE", ST7735_YELLOW, ST7735_BLACK, 1);
         for (int i = 0; i < NUM_GAMES; i++) draw_menu_row(i, i == s->menu_index, s);
+        draw_centered(70, "TURN=PICK  A=START", ST7735_GREEN, ST7735_BLACK, 1);
         prev_index = s->menu_index;
-        prev_temp  = -999;
-        prev_hard  = !s->hard_mode;   /* force footer repaint */
     } else if (s->menu_index != prev_index) {
         draw_menu_row(prev_index, false, s);
         draw_menu_row(s->menu_index, true, s);
         prev_index = s->menu_index;
     }
-
-    int t = (int)(s->temp + 0.5f);
-    if (t != prev_temp || s->hard_mode != prev_hard) {
-        char foot[48];
-        snprintf(foot, sizeof(foot), "T:%dC %s", t, s->hard_mode ? "HARD!" : "NORMAL");
-        st7735_fill_rect(0, 70, SCR_W, 10, ST7735_BLACK);
-        draw_centered(70, foot, s->hard_mode ? ST7735_RED : ST7735_GREEN, ST7735_BLACK, 1);
-        prev_temp = t;
-        prev_hard = s->hard_mode;
-    }
 }
 
-/* ============================ SNAKE ============================ */
+/* ============================ FLAPPY ============================ */
 
-static void snake_cell(int cx, int cy, uint16_t color)
+/* Draws (or erases, with black) one pipe pair, clipped to the screen. */
+static void flappy_pipe_pair(int x, int gap_y, uint16_t color)
 {
-    st7735_fill_rect(cx * SNAKE_CELL, SNAKE_GRID_Y0 + cy * SNAKE_CELL,
-                     SNAKE_CELL, SNAKE_CELL, color);
+    int x0 = x, w = FLAPPY_PIPE_W;
+    if (x0 < 0) { w += x0; x0 = 0; }
+    if (x0 + w > SCR_W) w = SCR_W - x0;
+    if (w <= 0) return;
+    st7735_fill_rect(x0, FLAPPY_TOP, w, gap_y - FLAPPY_TOP, color);          /* top pipe */
+    st7735_fill_rect(x0, gap_y + FLAPPY_GAP_H, w,
+                     SCR_H - gap_y - FLAPPY_GAP_H, color);                    /* bottom pipe */
 }
 
-static void snake_score_header(const arcade_state_t *s)
+static void render_flappy(const arcade_state_t *s)
 {
-    char h[48];
-    snprintf(h, sizeof(h), "SNAKE  %lu", (unsigned long)s->score);
-    st7735_fill_rect(0, 0, SCR_W, 12, ST7735_BLACK);
-    st7735_draw_string(2, 2, h, ST7735_GREEN, ST7735_BLACK, 1);
-}
-
-static void render_snake(const arcade_state_t *s)
-{
-    static uint32_t prev_step = 0xFFFFFFFFu;
+    static int  prev_by = -1;
+    static int  prev_px[FLAPPY_NUM_PIPES];
+    static int  prev_gy[FLAPPY_NUM_PIPES];
+    static bool prev_pipes_valid = false;
+    static bool prev_waiting = false;
+    static uint32_t prev_score = 0xFFFFFFFFu;
 
     if (s->dirty_full) {
         st7735_fill_screen(ST7735_BLACK);
-        snake_score_header(s);
-        for (int i = 0; i < s->snake.len; i++)
-            snake_cell(s->snake.x[i], s->snake.y[i], i == 0 ? ST7735_CYAN : ST7735_GREEN);
-        snake_cell(s->snake.food_x, s->snake.food_y, ST7735_RED);
-        prev_step = s->snake.step_id;
-        return;
+        prev_by = -1;
+        prev_pipes_valid = false;
+        prev_waiting = false;
+        prev_score = 0xFFFFFFFFu;
     }
 
-    if (s->snake.step_id != prev_step) {
-        if (!s->snake.grew) snake_cell(s->snake.tail_x, s->snake.tail_y, ST7735_BLACK);
-        if (s->snake.len > 1)
-            snake_cell(s->snake.x[1], s->snake.y[1], ST7735_GREEN);   /* old head -> body */
-        snake_cell(s->snake.x[0], s->snake.y[0], ST7735_CYAN);        /* new head */
-        snake_cell(s->snake.food_x, s->snake.food_y, ST7735_RED);
-        snake_score_header(s);
-        prev_step = s->snake.step_id;
+    /* erase previous pipes and bird */
+    if (prev_pipes_valid) {
+        for (int i = 0; i < FLAPPY_NUM_PIPES; i++)
+            flappy_pipe_pair(prev_px[i], prev_gy[i], ST7735_BLACK);
+    }
+    if (prev_by >= 0)
+        st7735_fill_rect(FLAPPY_BIRD_X, prev_by, FLAPPY_BIRD_W, FLAPPY_BIRD_H, ST7735_BLACK);
+
+    /* draw pipes then the bird on top */
+    for (int i = 0; i < FLAPPY_NUM_PIPES; i++) {
+        flappy_pipe_pair(s->flappy.pipe_x[i], s->flappy.gap_y[i], ST7735_GREEN);
+        prev_px[i] = s->flappy.pipe_x[i];
+        prev_gy[i] = s->flappy.gap_y[i];
+    }
+    prev_pipes_valid = true;
+
+    int by = s->flappy.y_fp >> 3;
+    st7735_fill_rect(FLAPPY_BIRD_X, by, FLAPPY_BIRD_W, FLAPPY_BIRD_H, ST7735_YELLOW);
+    prev_by = by;
+
+    /* "press A" hint while the run has not started yet */
+    if (!s->flappy.started) {
+        draw_centered(64, "PRESS A", ST7735_CYAN, ST7735_BLACK, 1);
+        prev_waiting = true;
+    } else if (prev_waiting) {
+        st7735_fill_rect(0, 64, SCR_W, 8, ST7735_BLACK);
+        prev_waiting = false;
+    }
+
+    if (s->score != prev_score) {
+        char h[48];
+        snprintf(h, sizeof(h), "FLAPPY %lu", (unsigned long)s->score);
+        st7735_fill_rect(0, 0, SCR_W, FLAPPY_TOP, ST7735_BLACK);
+        st7735_draw_string(2, 1, h, ST7735_YELLOW, ST7735_BLACK, 1);
+        prev_score = s->score;
     }
 }
 
@@ -217,16 +232,17 @@ static void render_gameover(const arcade_state_t *s)
     draw_centered(52, l, ST7735_YELLOW, ST7735_BLACK, 1);
 
     if (s->new_high) draw_centered(60, "NEW HIGH!", ST7735_GREEN, ST7735_BLACK, 1);
-    draw_centered(70, "A=RETRY  B=MENU", ST7735_CYAN, ST7735_BLACK, 1);
+    draw_centered(70, "A=RETRY  HOLD A=MENU", ST7735_CYAN, ST7735_BLACK, 1);
 }
 
 static void render_sleep(const arcade_state_t *s)
 {
     if (!s->dirty_full) return;
     st7735_fill_screen(ST7735_BLACK);
-    draw_centered(20, "Zzz", ST7735_BLUE, ST7735_BLACK, 2);
-    draw_centered(44, "SLEEPING", ST7735_GRAY, ST7735_BLACK, 1);
-    draw_centered(58, "PRESS C TO WAKE", ST7735_WHITE, ST7735_BLACK, 1);
+    draw_centered(18, "Zzz", ST7735_BLUE, ST7735_BLACK, 2);
+    draw_centered(42, "SLEEPING", ST7735_GRAY, ST7735_BLACK, 1);
+    draw_centered(56, "PRESS A", ST7735_WHITE, ST7735_BLACK, 1);
+    draw_centered(66, "TO WAKE", ST7735_WHITE, ST7735_BLACK, 1);
 }
 
 /* ============================ Task ============================ */
@@ -247,9 +263,9 @@ void display_task(void *pvParameters)
             case SCREEN_MENU:     render_menu(&snap);     break;
             case SCREEN_PLAY:
                 switch (snap.current_game) {
-                    case GAME_SNAKE: render_snake(&snap); break;
-                    case GAME_PONG:  render_pong(&snap);  break;
-                    case GAME_DINO:  render_dino(&snap);  break;
+                    case GAME_FLAPPY: render_flappy(&snap); break;
+                    case GAME_PONG:   render_pong(&snap);   break;
+                    case GAME_DINO:   render_dino(&snap);   break;
                 }
                 break;
             case SCREEN_GAMEOVER: render_gameover(&snap); break;
