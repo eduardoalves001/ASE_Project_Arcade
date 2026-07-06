@@ -89,6 +89,10 @@
           <div class="score" id="liveScore">0</div>
           <div style="color:var(--dim);font-size:15px">SCORE</div>
         </div>
+        <div class="badges">
+          <div class="badge">TEMP <b id="temp">--</b>°C</div>
+          <div class="badge">HUM <b id="hum">--</b>%</div>
+        </div>
       </div>
     </div>
 
@@ -136,6 +140,10 @@
     socket.on('arcade_status', (d) => {
       $('screen').textContent   = (d.screen || 'menu').toUpperCase();
       $('liveScore').textContent= d.score ?? 0;
+
+      const envOk = d.env_ok === true;
+      $('temp').textContent = envOk && typeof d.temp === 'number' ? d.temp.toFixed(1) : '--';
+      $('hum').textContent  = envOk && typeof d.hum  === 'number' ? d.hum.toFixed(0)  : '--';
 
       $('hi-flappy').textContent = d.high_flappy ?? 0;
       $('hi-pong').textContent   = d.high_pong ?? 0;

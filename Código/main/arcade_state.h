@@ -111,6 +111,12 @@ typedef struct {
     uint32_t  high[NUM_GAMES];  /* persisted high scores */
     bool      new_high;         /* the run that just ended beat the record */
 
+    /* ambient telemetry (DHT20) — menu readout + dashboard only.
+     * Deliberately NO effect on gameplay, LED or difficulty. */
+    float     temp;
+    float     hum;
+    bool      env_ok;           /* sensor detected and reporting */
+
     bool      is_sleeping;
     uint32_t  frame;            /* free-running game tick counter */
     bool      dirty_full;       /* renderer must repaint the whole screen */

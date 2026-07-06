@@ -39,7 +39,10 @@ static void draw_menu_row(int i, bool selected, const arcade_state_t *s)
 
 static void render_menu(const arcade_state_t *s)
 {
-    static int prev_index = -1;
+    static int  prev_index = -1;
+    static int  prev_temp  = -999;
+    static int  prev_hum   = -1;
+    static bool prev_env   = false;
 
     if (s->dirty_full) {
         st7735_fill_screen(ST7735_BLACK);
@@ -47,10 +50,30 @@ static void render_menu(const arcade_state_t *s)
         for (int i = 0; i < NUM_GAMES; i++) draw_menu_row(i, i == s->menu_index, s);
         draw_centered(70, "TURN=PICK  A=START", ST7735_GREEN, ST7735_BLACK, 1);
         prev_index = s->menu_index;
+        prev_temp  = -999;               /* force the ambient corner repaint */
+        prev_hum   = -1;
+        prev_env   = false;
     } else if (s->menu_index != prev_index) {
         draw_menu_row(prev_index, false, s);
         draw_menu_row(s->menu_index, true, s);
         prev_index = s->menu_index;
+    }
+
+    /* ambient readout in the top-right corner (telemetry only, hidden when
+     * the DHT20 is absent) — no effect on any game */
+    int t = (int)(s->temp + 0.5f);
+    int h = (int)(s->hum  + 0.5f);
+    if (s->env_ok != prev_env || (s->env_ok && (t != prev_temp || h != prev_hum))) {
+        st7735_fill_rect(SCR_W - 48, 2, 48, 8, ST7735_BLACK);
+        if (s->env_ok) {
+            char amb[12];
+            snprintf(amb, sizeof(amb), "%dC %d%%", t, h);
+            st7735_draw_string(SCR_W - 2 - 6 * (uint16_t)strlen(amb), 2, amb,
+                               ST7735_CYAN, ST7735_BLACK, 1);
+        }
+        prev_env  = s->env_ok;
+        prev_temp = t;
+        prev_hum  = h;
     }
 }
 

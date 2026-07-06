@@ -208,12 +208,15 @@ void net_task(void *pvParameters)
         snprintf(payload, sizeof(payload),
                  "{\"screen\":\"%s\",\"game\":\"%s\",\"score\":%lu,"
                  "\"high_flappy\":%lu,\"high_pong\":%lu,\"high_dino\":%lu,"
+                 "\"temp\":%.1f,\"hum\":%.1f,\"env_ok\":%s,"
                  "\"is_sleeping\":%s}",
                  screen_str(s.screen), game_str(s.current_game),
                  (unsigned long)s.score,
                  (unsigned long)s.high[GAME_FLAPPY],
                  (unsigned long)s.high[GAME_PONG],
                  (unsigned long)s.high[GAME_DINO],
+                 s.temp, s.hum,
+                 s.env_ok      ? "true" : "false",
                  s.is_sleeping ? "true" : "false");
 
         ESP_LOGD(TAG, "MQTT status: %s", payload);
