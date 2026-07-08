@@ -1,0 +1,142 @@
+<svg viewBox="0 0 1200 960" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+<title>ESP-Arcade system architecture</title>
+<desc>Black and white system architecture diagram of the ESP-Arcade console: ESP32-C6 on the left with the FreeRTOS task set, and all peripherals in a column on the right (dashboard via Wi-Fi/MQTT/TLS, DHT20, potentiometer, push button, ST7735 TFT, microSD, status LED), with bus and GPIO labels on each connection arrow.</desc>
+<rect x="0" y="0" width="1200" height="960" fill="#ffffff"/>
+
+<text x="24" y="36" font-size="20" font-weight="700">ESP-Arcade — Arquitetura do Sistema</text>
+<text x="24" y="56" font-size="11.5" fill="#333333">Consola retro ESP32-C6 . 3 jogos . leaderboard web em tempo real . ESP-IDF v5.5</text>
+
+<!-- ================= left: ESP32-C6 ================= -->
+<rect x="70" y="330" width="380" height="300" rx="10" fill="#ffffff" stroke="#000000" stroke-width="2.4"/>
+<text x="88" y="358" font-size="15" font-weight="700">ESP32-C6-DevKitC-1</text>
+<text x="88" y="376" font-size="10.5">CPU RISC-V &#183; Wi-Fi 2.4 GHz &#183; ESP-IDF v5.5 + FreeRTOS</text>
+<line x1="88" y1="388" x2="432" y2="388" stroke="#000000" stroke-width="1"/>
+
+<text x="88" y="408" font-size="11.5" font-weight="700">Tarefas FreeRTOS (prioridade)</text>
+<g font-size="10.5" font-family="Courier New, monospace">
+  <text x="96" y="428">game_task (6)    logica dos 3 jogos</text>
+  <text x="96" y="446">display_task (5) render dirty-rect no TFT</text>
+  <text x="96" y="464">net_task (4)     Wi-Fi + MQTT, estado 2 s</text>
+  <text x="96" y="482">sensor_task (3)  leitura DHT20 2 s</text>
+</g>
+<line x1="88" y1="496" x2="432" y2="496" stroke="#000000" stroke-width="1"/>
+
+<text x="88" y="516" font-size="11.5" font-weight="700">Sincronizacao</text>
+<g font-size="10.5">
+  <text x="96" y="534">mutex protege o estado partilhado (g_state)</text>
+  <text x="96" y="551">queue: ISR do botao + comandos MQTT &#8594; game_task</text>
+  <text x="96" y="568">task notify acorda o net_task em mudancas de estado</text>
+</g>
+<line x1="88" y1="581" x2="432" y2="581" stroke="#000000" stroke-width="1"/>
+<text x="88" y="601" font-size="11.5" font-weight="700">Energia</text>
+<text x="96" y="619" font-size="10.5">light sleep apos 30 s no menu &#183; botao A acorda</text>
+
+<!-- ================= connections (lines first, then labels on white) ================= -->
+<!-- 1. dashboard (bidirectional) -->
+<line x1="450" y1="350" x2="720" y2="150" stroke="#000000" stroke-width="1.6"/>
+<polygon points="720,150 713.3,161.2 707.4,153.1" fill="#000000"/>
+<polygon points="450,350 456.7,338.8 462.6,346.9" fill="#000000"/>
+<!-- 2. DHT20 -> ESP -->
+<line x1="720" y1="274" x2="450" y2="390" stroke="#000000" stroke-width="1.6"/>
+<polygon points="450,390 459.0,380.7 463.0,389.9" fill="#000000"/>
+<!-- 3. Pot -> ESP -->
+<line x1="720" y1="378" x2="450" y2="430" stroke="#000000" stroke-width="1.6"/>
+<polygon points="450,430 460.8,422.8 462.7,432.6" fill="#000000"/>
+<!-- 4. Botao -> ESP -->
+<line x1="720" y1="482" x2="450" y2="470" stroke="#000000" stroke-width="1.6"/>
+<polygon points="450,470 462.2,465.5 461.8,475.5" fill="#000000"/>
+<!-- 5. ESP -> TFT -->
+<line x1="450" y1="510" x2="720" y2="594" stroke="#000000" stroke-width="1.6"/>
+<polygon points="720,594 707.1,595.2 710.0,585.7" fill="#000000"/>
+<!-- 6. ESP <-> SD (bidirectional) -->
+<line x1="450" y1="550" x2="720" y2="706" stroke="#000000" stroke-width="1.6"/>
+<polygon points="720,706 707.1,704.3 712.1,695.7" fill="#000000"/>
+<polygon points="450,550 462.9,551.7 457.9,560.3" fill="#000000"/>
+<!-- 7. ESP -> LED -->
+<line x1="450" y1="590" x2="720" y2="810" stroke="#000000" stroke-width="1.6"/>
+<polygon points="720,810 707.5,806.3 713.9,798.5" fill="#000000"/>
+
+<!-- labels on white patches over each line -->
+<rect x="518" y="240" width="136" height="16" fill="#ffffff"/>
+<text x="524" y="252" font-size="10.5" font-weight="700">Wi-Fi STA &#183; MQTT/TLS</text>
+<rect x="550" y="322" width="70" height="16" fill="#ffffff"/>
+<text x="556" y="334" font-size="10.5" font-weight="700">I2C 50 kHz</text>
+<rect x="569" y="394" width="32" height="16" fill="#ffffff"/>
+<text x="575" y="406" font-size="10.5" font-weight="700">ADC</text>
+<rect x="556" y="466" width="60" height="16" fill="#ffffff"/>
+<text x="562" y="478" font-size="10.5" font-weight="700">GPIO IRQ</text>
+<rect x="543" y="542" width="84" height="16" fill="#ffffff"/>
+<text x="549" y="554" font-size="10.5" font-weight="700">SPI2 &#183; CS TFT</text>
+<rect x="546" y="618" width="78" height="16" fill="#ffffff"/>
+<text x="552" y="630" font-size="10.5" font-weight="700">SPI2 &#183; CS SD</text>
+<rect x="556" y="690" width="58" height="16" fill="#ffffff"/>
+<text x="562" y="702" font-size="10.5" font-weight="700">GPIO out</text>
+
+<!-- ================= right column: peripherals ================= -->
+<!-- dashboard -->
+<rect x="720" y="90" width="410" height="120" rx="10" fill="#ffffff" stroke="#000000" stroke-width="1.6" stroke-dasharray="6 3"/>
+<text x="738" y="114" font-size="13" font-weight="700">Portatil (fora da placa): broker + dashboard</text>
+<g font-size="10.5">
+  <text x="738" y="133">Mosquitto (TLS, porta 8883, CA local)</text>
+  <text x="738" y="150">Node.js + Express + Socket.IO &#8594; browser</text>
+  <text x="738" y="167">publica: arcade/status (JSON, 2 s)</text>
+  <text x="738" y="184">subscreve: arcade/command (menu, select, jogos)</text>
+</g>
+
+<!-- DHT20 -->
+<rect x="720" y="226" width="410" height="96" rx="10" fill="#ffffff" stroke="#000000" stroke-width="1.6"/>
+<text x="738" y="250" font-size="13" font-weight="700">DHT20</text>
+<g font-size="10.5">
+  <text x="738" y="269">temperatura + humidade (telemetria)</text>
+  <text x="738" y="286">I2C: SDA GPIO6 &#183; SCL GPIO7 &#183; 50 kHz</text>
+  <text x="738" y="303">pull-ups externos 3k9 &#8594; 3V3</text>
+</g>
+
+<!-- potentiometer -->
+<rect x="720" y="338" width="410" height="80" rx="10" fill="#ffffff" stroke="#000000" stroke-width="1.6"/>
+<text x="738" y="362" font-size="13" font-weight="700">Potenciometro</text>
+<g font-size="10.5">
+  <text x="738" y="381">ADC one-shot &#183; GPIO1</text>
+  <text x="738" y="398">calibrado 0-100% (raquete do Pong)</text>
+</g>
+
+<!-- button -->
+<rect x="720" y="434" width="410" height="96" rx="10" fill="#ffffff" stroke="#000000" stroke-width="1.6"/>
+<text x="738" y="458" font-size="13" font-weight="700">Botao A (unico)</text>
+<g font-size="10.5">
+  <text x="738" y="477">GPIO23 &#183; interrupcao + queue</text>
+  <text x="738" y="494">toque = acao &#183; premir 5 s = menu</text>
+  <text x="738" y="511">tambem acorda do light sleep</text>
+</g>
+
+<!-- TFT -->
+<rect x="720" y="546" width="410" height="96" rx="10" fill="#ffffff" stroke="#000000" stroke-width="1.6"/>
+<text x="738" y="570" font-size="13" font-weight="700">TFT ST7735 160&#215;80</text>
+<g font-size="10.5">
+  <text x="738" y="589">SPI2 &#183; CS 22 &#183; DC 2 &#183; RST 3 &#183; BL 15</text>
+  <text x="738" y="606">menus, jogos, leitura ambiente</text>
+</g>
+
+<!-- microSD -->
+<rect x="720" y="658" width="410" height="96" rx="10" fill="#ffffff" stroke="#000000" stroke-width="1.6"/>
+<text x="738" y="682" font-size="13" font-weight="700">Cartao microSD</text>
+<g font-size="10.5">
+  <text x="738" y="701">SPI2 + FatFs &#183; CS GPIO18</text>
+  <text x="738" y="718">high scores persistentes</text>
+  <text x="738" y="735">(sobrevivem ao corte de energia)</text>
+</g>
+
+<!-- LED -->
+<rect x="720" y="770" width="410" height="80" rx="10" fill="#ffffff" stroke="#000000" stroke-width="1.6"/>
+<text x="738" y="794" font-size="13" font-weight="700">LED de estado</text>
+<g font-size="10.5">
+  <text x="738" y="813">GPIO5 &#183; resistencia 270 &#937;</text>
+  <text x="738" y="830">pulso de 120 ms a cada ponto</text>
+</g>
+
+<!-- ================= notes ================= -->
+<rect x="70" y="880" width="390" height="34" rx="8" fill="#ffffff" stroke="#000000" stroke-width="1.2" stroke-dasharray="3 3"/>
+<text x="88" y="902" font-size="11">SPI2 partilhado: MOSI 19 &#183; MISO 20 &#183; CLK 21 (dois chip-selects)</text>
+
+<text x="720" y="902" font-size="9.5" fill="#333333">setas = sentido dos dados &#183; seta dupla = leitura e escrita</text>
+</svg>

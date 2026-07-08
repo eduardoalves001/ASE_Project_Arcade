@@ -5,7 +5,8 @@
 #define I2C_MASTER_SCL_IO           7
 #define I2C_MASTER_SDA_IO           6
 #define I2C_MASTER_NUM              I2C_NUM_0
-#define I2C_MASTER_FREQ_HZ          100 * 1000
+// 50 kHz (not 100): breadboard jumpers + 3k9 pull-ups need the extra rise-time margin
+#define I2C_MASTER_FREQ_HZ          50 * 1000
 
 // SPI (Display ST7735 + SD Card)
 #define PIN_MOSI                    19

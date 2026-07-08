@@ -25,9 +25,6 @@
 
 static const char *TAG = "Arcade";
 
-/* Set to 1 to enable Wi-Fi + MQTT leaderboard. Kept off for now: the board is
- * not on the configured hotspot, and the Wi-Fi current spikes can brown out a
- * marginal breadboard supply and glitch the display. */
 #define ARCADE_ENABLE_WIFI 1
 
 static void IRAM_ATTR gpio_isr_handler(void *arg)
@@ -39,7 +36,8 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
 void app_main(void)
 {
     esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
@@ -47,57 +45,50 @@ void app_main(void)
 
     ESP_LOGI(TAG, "Booting ESP-Arcade...");
 
-    /* shared state */
     memset(&g_state, 0, sizeof(g_state));
-    g_state.screen       = SCREEN_MENU;
+    g_state.screen = SCREEN_MENU;
     g_state.current_game = GAME_FLAPPY;
-    state_mutex      = xSemaphoreCreateMutex();
+    state_mutex = xSemaphoreCreateMutex();
     button_evt_queue = xQueueCreate(10, sizeof(uint32_t));
 
-    /* status LED */
     gpio_config_t led_conf = {
-        .intr_type    = GPIO_INTR_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
         .pin_bit_mask = (1ULL << LED_GPIO),
-        .mode         = GPIO_MODE_OUTPUT,
+        .mode = GPIO_MODE_OUTPUT,
         .pull_down_en = 0,
-        .pull_up_en   = 0,
+        .pull_up_en = 0,
     };
     gpio_config(&led_conf);
 
-    /* single button: input, pull-up, falling-edge interrupt */
     gpio_config_t io_conf = {
-        .intr_type    = GPIO_INTR_NEGEDGE,
+        .intr_type = GPIO_INTR_NEGEDGE,
         .pin_bit_mask = (1ULL << BUTTON_A_GPIO),
-        .mode         = GPIO_MODE_INPUT,
-        .pull_up_en   = 1,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = 1,
     };
     gpio_config(&io_conf);
     gpio_install_isr_service(0);
     gpio_isr_handler_add(BUTTON_A_GPIO, gpio_isr_handler, (void *)BUTTON_A_GPIO);
 
-    /* potentiometer on ADC1 */
-    adc_oneshot_unit_init_cfg_t adc1InitCfg = { .unit_id = ADC_UNIT_1 };
+    adc_oneshot_unit_init_cfg_t adc1InitCfg = {.unit_id = ADC_UNIT_1};
     adc_oneshot_new_unit(&adc1InitCfg, &adc1_handle);
-    adc_oneshot_chan_cfg_t adcChanCfg = { .atten = ADC_ATTEN_DB_12, .bitwidth = ADC_BITWIDTH_DEFAULT };
+    adc_oneshot_chan_cfg_t adcChanCfg = {.atten = ADC_ATTEN_DB_12, .bitwidth = ADC_BITWIDTH_DEFAULT};
     adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL, &adcChanCfg);
 
-    /* DHT20 ambient sensor on I2C (telemetry only; console runs fine without it) */
     static i2c_master_bus_handle_t i2cBusHandle;
     static i2c_master_dev_handle_t dht20Handle;
     dht20_init(&i2cBusHandle, &dht20Handle, DHT20_ADDR, I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO, I2C_MASTER_FREQ_HZ);
 
-    /* shared SPI2 bus (TFT + SD card) */
     spi_bus_config_t buscfg = {
-        .mosi_io_num   = PIN_MOSI,
-        .miso_io_num   = PIN_MISO,
-        .sclk_io_num   = PIN_CLK,
+        .mosi_io_num = PIN_MOSI,
+        .miso_io_num = PIN_MISO,
+        .sclk_io_num = PIN_CLK,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
         .max_transfer_sz = 4000,
     };
     ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
 
-    /* SD card over SPI (single mount attempt — the known-good version). */
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
         .format_if_mount_failed = true,
         .max_files = 5,
@@ -107,38 +98,40 @@ void app_main(void)
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
     host.slot = SPI2_HOST;
     sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
-    slot_config.gpio_cs  = PIN_SD_CS;
-    slot_config.host_id  = host.slot;
+    slot_config.gpio_cs = PIN_SD_CS;
+    slot_config.host_id = host.slot;
 
     esp_err_t ret_sd = esp_vfs_fat_sdspi_mount("/sdcard", &host, &slot_config, &mount_config, &card);
-    if (ret_sd == ESP_OK) {
+    if (ret_sd == ESP_OK)
+    {
         ESP_LOGI(TAG, "SD card mounted.");
         load_high_scores();
-    } else {
+    }
+    else
+    {
         ESP_LOGE(TAG, "Failed to mount SD card: %s", esp_err_to_name(ret_sd));
     }
 
-    /* TFT display (shares the SPI bus -> skip_bus_init) */
     st7735_config_t tft_cfg = {
-        .mosi_io_num  = PIN_MOSI,
-        .sclk_io_num  = PIN_CLK,
-        .cs_io_num    = PIN_CS,
-        .dc_io_num    = PIN_DC,
-        .rst_io_num   = PIN_RST,
-        .bl_io_num    = PIN_BL,
-        .host_id      = SPI2_HOST,
+        .mosi_io_num = PIN_MOSI,
+        .sclk_io_num = PIN_CLK,
+        .cs_io_num = PIN_CS,
+        .dc_io_num = PIN_DC,
+        .rst_io_num = PIN_RST,
+        .bl_io_num = PIN_BL,
+        .host_id = SPI2_HOST,
         .skip_bus_init = true,
     };
     st7735_init(&tft_cfg);
     st7735_fill_screen(ST7735_BLACK);
     st7735_draw_string(28, 34, "ESP-ARCADE", ST7735_YELLOW, ST7735_BLACK, 1);
 
-    /* tasks */
-    xTaskCreate(sensor_task,  "sensor_task",  4096, (void *)&dht20Handle, 3, NULL);
-    xTaskCreate(game_task,    "game_task",    8192, NULL, 6, NULL);
+    /* As tarefas FreeRTOS */
+    xTaskCreate(sensor_task, "sensor_task", 4096, (void *)&dht20Handle, 3, NULL);
+    xTaskCreate(game_task, "game_task", 8192, NULL, 6, NULL);
     xTaskCreate(display_task, "display_task", 8192, NULL, 5, NULL);
 
-    /* Wi-Fi + MQTT leaderboard (games keep running even with no network) */
+    /* Wi-Fi + MQTT leaderboard*/
 #if ARCADE_ENABLE_WIFI
     wifi_init_sta();
     xTaskCreate(net_task, "net_task", 8192, NULL, 4, &net_task_handle);

@@ -20,6 +20,24 @@
 // Status bit masks
 #define DHT20_STATUS_BUSY_MASK        0x80
 
+/* DHT20 datasheet 7.4: read the register, then write it back with 0xB0 set in
+ * the command byte and the first data byte zeroed. Applied to 0x1B/0x1C/0x1E
+ * at power-up, this clears the state that makes measurements return zeros. */
+static void dht20_reset_register(i2c_master_dev_handle_t dev, uint8_t reg)
+{
+    uint8_t cmd[3] = {reg, 0x00, 0x00};
+    if (i2c_master_transmit(dev, cmd, sizeof(cmd), 100) != ESP_OK) return;
+    vTaskDelay(pdMS_TO_TICKS(5));
+
+    uint8_t buf[3] = {0};
+    if (i2c_master_receive(dev, buf, sizeof(buf), 100) != ESP_OK) return;
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    uint8_t cmd2[3] = {(uint8_t)(0xB0 | reg), buf[1], buf[2]};
+    i2c_master_transmit(dev, cmd2, sizeof(cmd2), 100);
+    vTaskDelay(pdMS_TO_TICKS(5));
+}
+
 void dht20_init(i2c_master_bus_handle_t* pBusHandle,
                 i2c_master_dev_handle_t* pSensorHandle,
                 uint8_t sensorAddr, int sdaPin, int sclPin, uint32_t clkSpeedHz)
@@ -30,7 +48,9 @@ void dht20_init(i2c_master_bus_handle_t* pBusHandle,
         .scl_io_num = sclPin,
         .sda_io_num = sdaPin,
         .glitch_ignore_cnt = 7,
-        .trans_queue_depth = 4,
+        /* Synchronous mode (no trans_queue_depth): async queues the transfer and
+         * returns ESP_OK before data arrives, so reads could "succeed" with an
+         * all-zero buffer that decodes to -50 C / 0 %RH. */
         .flags.enable_internal_pullup = true,
     };
 
@@ -44,12 +64,15 @@ void dht20_init(i2c_master_bus_handle_t* pBusHandle,
 
     ESP_ERROR_CHECK(i2c_master_bus_add_device(*pBusHandle, &i2cDevCfg, pSensorHandle));
 
-    // Power-up calibration sequence (AHT20/DHT20 datasheet). Not error-checked:
-    // if the sensor is absent this must not crash the console (sensor_task
-    // tolerates a missing DHT20 and simply hides the readout).
+    // Official DHT20 datasheet power-up flow: wait >=100 ms, read the status
+    // word, then reset the internal registers 0x1B/0x1C/0x1E (datasheet 7.4
+    // sample code). Skipping the register reset is the documented cause of
+    // measurements that "complete" but return all-zero data.
     vTaskDelay(pdMS_TO_TICKS(100));
-    uint8_t init_cmd[3] = {DHT20_CMD_INIT, DHT20_CMD_INIT_DATA_1, DHT20_CMD_INIT_DATA_2};
-    i2c_master_transmit(*pSensorHandle, init_cmd, sizeof(init_cmd), -1);
+
+    dht20_reset_register(*pSensorHandle, 0x1B);
+    dht20_reset_register(*pSensorHandle, 0x1C);
+    dht20_reset_register(*pSensorHandle, 0x1E);
     vTaskDelay(pdMS_TO_TICKS(10));
 }
 
@@ -102,29 +125,65 @@ void dht20_read_data_after_wait(i2c_master_dev_handle_t sensorHandle, float* pTe
     dht20_read_data(sensorHandle, pTemperature, pHumidity);
 }
 
+/* CRC-8 over the first 6 frame bytes (poly 0x31, init 0xFF, MSB first) —
+ * the checksum the DHT20 appends as byte 7 of every measurement frame. */
+static uint8_t dht20_crc8(const uint8_t *data, int len)
+{
+    uint8_t crc = 0xFF;
+    for (int i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (int b = 0; b < 8; b++) {
+            crc = (crc & 0x80) ? (uint8_t)((crc << 1) ^ 0x31) : (uint8_t)(crc << 1);
+        }
+    }
+    return crc;
+}
+
+#define DHT20_I2C_TIMEOUT_MS   100   /* finite: a wedged bus must not hang the task */
+#define DHT20_READ_ATTEMPTS    3     /* full trigger+read retries per call */
+
 esp_err_t dht20_read_safe(i2c_master_dev_handle_t sensorHandle, float* pTemperature, float* pHumidity)
 {
-    // Finite 100ms timeouts so a missing sensor fails fast instead of blocking.
     uint8_t trigger[3] = {DHT20_CMD_TRIGGER_MEASUREMENT, DHT20_CMD_TRIGGER_DATA_1, DHT20_CMD_TRIGGER_DATA_2};
-    esp_err_t err = i2c_master_transmit(sensorHandle, trigger, sizeof(trigger), -1);
-    if (err != ESP_OK) return err;
+    esp_err_t err = ESP_FAIL;
 
-    vTaskDelay(pdMS_TO_TICKS(80));
+    for (int attempt = 0; attempt < DHT20_READ_ATTEMPTS; attempt++) {
+        if (attempt > 0) vTaskDelay(pdMS_TO_TICKS(50));
 
-    /* Poll the busy bit instead of trusting a fixed delay: keep re-reading
-     * the 7-byte frame until the sensor reports it is no longer measuring
-     * (bit 0x80 of the status byte clear), or give up after ~200 ms extra. */
-    uint8_t data[7] = {0};
-    for (int attempt = 0; attempt < 10; attempt++) {
-        err = i2c_master_receive(sensorHandle, data, sizeof(data), -1);
-        if (err != ESP_OK) return err;
-        if (!(data[0] & DHT20_STATUS_BUSY_MASK)) break;   /* not busy: data is valid */
-        vTaskDelay(pdMS_TO_TICKS(20));
+        /* A NACK here usually means the sensor is still busy with a previous
+         * measurement (it NACKs every transaction while measuring) — wait and retry. */
+        err = i2c_master_transmit(sensorHandle, trigger, sizeof(trigger), DHT20_I2C_TIMEOUT_MS);
+        if (err != ESP_OK) continue;
+
+        vTaskDelay(pdMS_TO_TICKS(80));   /* nominal measurement time */
+
+        /* This unit takes ~170 ms per measurement and NACKs the bus the whole
+         * time, so a failed receive means "not done yet", NOT a dead sensor.
+         * Keep polling (up to ~450 ms total) instead of re-triggering, which
+         * would restart the measurement and livelock forever. */
+        uint8_t data[7] = {0};
+        bool got_frame = false;
+        for (int poll = 0; poll < 15; poll++) {
+            err = i2c_master_receive(sensorHandle, data, sizeof(data), DHT20_I2C_TIMEOUT_MS);
+            if (err == ESP_OK && !(data[0] & DHT20_STATUS_BUSY_MASK)) { got_frame = true; break; }
+            if (err == ESP_OK) err = ESP_ERR_TIMEOUT;   /* answered but busy bit still set */
+            vTaskDelay(pdMS_TO_TICKS(25));
+        }
+        if (!got_frame) continue;
+
+        /* CRC note: this unit answers with empty data + 0xFF filler instead of
+         * a real checksum (measurement core fault). Per project decision, the
+         * frame is decoded and shown as-is — the readout reflects exactly what
+         * the sensor reports, even when that is the -50 C / 0 % empty pattern. */
+        if (dht20_crc8(data, 6) != data[6]) {
+            ESP_LOGD("DHT20", "CRC mismatch; displaying raw sensor data anyway");
+        }
+
+        uint32_t raw_humid = ((uint32_t)data[1] << 12) | ((uint32_t)data[2] << 4) | (((uint32_t)data[3] & 0xF0) >> 4);
+        uint32_t raw_temp = (((uint32_t)data[3] & 0x0F) << 16) | ((uint32_t)data[4] << 8) | (uint32_t)data[5];
+        if (pHumidity)    *pHumidity = ((float)raw_humid / 1048576.0f) * 100.0f;
+        if (pTemperature) *pTemperature = ((float)raw_temp / 1048576.0f) * 200.0f - 50.0f;
+        return ESP_OK;
     }
-
-    uint32_t raw_humid = ((uint32_t)data[1] << 12) | ((uint32_t)data[2] << 4) | (((uint32_t)data[3] & 0xF0) >> 4);
-    uint32_t raw_temp = (((uint32_t)data[3] & 0x0F) << 16) | ((uint32_t)data[4] << 8) | (uint32_t)data[5];
-    if (pHumidity)    *pHumidity = ((float)raw_humid / 1048576.0f) * 100.0f;
-    if (pTemperature) *pTemperature = ((float)raw_temp / 1048576.0f) * 200.0f - 50.0f;
-    return ESP_OK;
+    return err;
 }
