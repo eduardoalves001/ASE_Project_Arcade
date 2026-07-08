@@ -28,6 +28,21 @@ $ErrorActionPreference = 'Stop'
 $env:MSYS_NO_PATHCONV   = '1'
 $env:MSYS2_ARG_CONV_EXCL = '*'
 
+# openssl is usually NOT on PowerShell's PATH (only inside Git Bash). Resolve it
+# explicitly, falling back to the copy bundled with Git for Windows.
+$OpenSsl = (Get-Command openssl -ErrorAction SilentlyContinue).Source
+if (-not $OpenSsl) {
+    foreach ($cand in @(
+        "$env:ProgramFiles\Git\usr\bin\openssl.exe",
+        "$env:ProgramFiles\Git\mingw64\bin\openssl.exe",
+        "${env:ProgramFiles(x86)}\Git\usr\bin\openssl.exe")) {
+        if (Test-Path $cand) { $OpenSsl = $cand; break }
+    }
+}
+if (-not $OpenSsl) {
+    throw "openssl not found. Install Git for Windows, or run scripts\run.sh from Git Bash instead."
+}
+
 $Root    = Split-Path -Parent $PSScriptRoot
 $CertDir = Join-Path $Root ".local\mqtt-certs"
 New-Item -ItemType Directory -Force $CertDir | Out-Null
@@ -53,11 +68,17 @@ $srvCrt = "$CertDir\arcade-server.crt"; $srvCnf = "$CertDir\arcade-server.cnf"
 $passwd = "$CertDir\arcade.passwd"
 $conf   = "$CertDir\mosquitto-arcade.conf"
 
+# PowerShell 5.1 promotes any native-tool stderr to a terminating error when
+# ErrorActionPreference is 'Stop'. openssl prints its key-gen progress to stderr,
+# so relax the preference around the native calls; correctness is still gated on
+# $LASTEXITCODE below.
+$ErrorActionPreference = 'Continue'
+
 # ---- 1. local CA (reused if it already exists) ----
 if (-not (Test-Path $caCrt)) {
     Write-Host "Generating local CA..."
-    openssl req -x509 -newkey rsa:2048 -nodes -keyout (U $caKey) -out (U $caCrt) `
-        -days $DaysCA -subj "/CN=ESP-Arcade Local CA"
+    & $OpenSsl req -x509 -newkey rsa:2048 -nodes -keyout (U $caKey) -out (U $caCrt) `
+        -days $DaysCA -subj "/CN=ESP-Arcade Local CA" 2>$null
     if ($LASTEXITCODE) { throw "openssl CA generation failed" }
 } else {
     Write-Host "Reusing existing CA: $caCrt"
@@ -85,16 +106,17 @@ $san
 Set-Content -Path $srvCnf -Value $cnf -Encoding ascii
 
 Write-Host "Generating server certificate (SAN bound to $Ip)..."
-openssl req -new -newkey rsa:2048 -nodes -keyout (U $srvKey) -out (U $srvCsr) -config (U $srvCnf)
+& $OpenSsl req -new -newkey rsa:2048 -nodes -keyout (U $srvKey) -out (U $srvCsr) -config (U $srvCnf) 2>$null
 if ($LASTEXITCODE) { throw "openssl CSR generation failed" }
-openssl x509 -req -in (U $srvCsr) -CA (U $caCrt) -CAkey (U $caKey) -CAcreateserial `
-    -out (U $srvCrt) -days $DaysServer -extensions v3_req -extfile (U $srvCnf)
+& $OpenSsl x509 -req -in (U $srvCsr) -CA (U $caCrt) -CAkey (U $caKey) -CAcreateserial `
+    -out (U $srvCrt) -days $DaysServer -extensions v3_req -extfile (U $srvCnf) 2>$null
 if ($LASTEXITCODE) { throw "openssl server cert signing failed" }
 
 # ---- 3. password file ----
 Write-Host "Writing password file for user '$Username'..."
 & "$MosqDir\mosquitto_passwd.exe" -c -b $passwd $Username $Password
 if ($LASTEXITCODE) { throw "mosquitto_passwd failed" }
+$ErrorActionPreference = 'Stop'   # restore strict handling for the file writes below
 
 # ---- 4. Mosquitto TLS listener config ----
 $confText = @"
@@ -134,7 +156,7 @@ Set-Content -Path "$Root\main\generated_mqtt_config.h" -Value $header -Encoding 
 
 $json = @"
 {
-  "brokerUrl": "mqtts://${Ip}:8883",
+  "brokerUrl": "mqtts://127.0.0.1:8883",
   "caFile": "../main/mqtt_broker_ca.pem",
   "username": "$Username",
   "password": "$Password"

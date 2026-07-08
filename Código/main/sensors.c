@@ -18,8 +18,9 @@ void sensor_task(void *pvParameters)
 
     while (1) {
         float t = 0.0f, h = 0.0f;
+        esp_err_t err = dht20_read_safe(*sensor, &t, &h);
 
-        if (dht20_read_safe(*sensor, &t, &h) == ESP_OK) {
+        if (err == ESP_OK) {
             bool was_ok = false;
             if (xSemaphoreTake(state_mutex, portMAX_DELAY)) {
                 was_ok        = g_state.env_ok;

@@ -17,10 +17,8 @@
 #define PIN_BL                      15
 #define PIN_SD_CS                   18
 
-// Buttons and extras
+// Button and extras
 #define BUTTON_A_GPIO               23
-#define BUTTON_B_GPIO               0
-#define BUTTON_C_GPIO               4
 
 #define LED_GPIO                    5
 #define ADC_GPIO                    1

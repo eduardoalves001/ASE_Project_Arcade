@@ -64,18 +64,16 @@ void app_main(void)
     };
     gpio_config(&led_conf);
 
-    /* three buttons: input, pull-up, falling-edge interrupt */
+    /* single button: input, pull-up, falling-edge interrupt */
     gpio_config_t io_conf = {
         .intr_type    = GPIO_INTR_NEGEDGE,
-        .pin_bit_mask = (1ULL << BUTTON_A_GPIO) | (1ULL << BUTTON_B_GPIO) | (1ULL << BUTTON_C_GPIO),
+        .pin_bit_mask = (1ULL << BUTTON_A_GPIO),
         .mode         = GPIO_MODE_INPUT,
         .pull_up_en   = 1,
     };
     gpio_config(&io_conf);
     gpio_install_isr_service(0);
     gpio_isr_handler_add(BUTTON_A_GPIO, gpio_isr_handler, (void *)BUTTON_A_GPIO);
-    gpio_isr_handler_add(BUTTON_B_GPIO, gpio_isr_handler, (void *)BUTTON_B_GPIO);
-    gpio_isr_handler_add(BUTTON_C_GPIO, gpio_isr_handler, (void *)BUTTON_C_GPIO);
 
     /* potentiometer on ADC1 */
     adc_oneshot_unit_init_cfg_t adc1InitCfg = { .unit_id = ADC_UNIT_1 };
@@ -87,18 +85,6 @@ void app_main(void)
     static i2c_master_bus_handle_t i2cBusHandle;
     static i2c_master_dev_handle_t dht20Handle;
     dht20_init(&i2cBusHandle, &dht20Handle, DHT20_ADDR, I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO, I2C_MASTER_FREQ_HZ);
-
-    /* --- TEMP bring-up: one-shot I2C bus scan (remove after wiring is confirmed) --- */
-    {
-        int found = 0;
-        for (uint8_t a = 0x08; a < 0x78; a++) {
-            if (i2c_master_probe(i2cBusHandle, a, 50) == ESP_OK) {
-                ESP_LOGI(TAG, "I2C SCAN: device @ 0x%02X%s", a, a == DHT20_ADDR ? "  <-- DHT20" : "");
-                found++;
-            }
-        }
-        ESP_LOGI(TAG, "I2C SCAN: %d device(s) on SDA=%d SCL=%d", found, I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO);
-    }
 
     /* shared SPI2 bus (TFT + SD card) */
     spi_bus_config_t buscfg = {

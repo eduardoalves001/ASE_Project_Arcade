@@ -9,6 +9,14 @@
 #define DHT20_CMD_TRIGGER_DATA_1      0x33
 #define DHT20_CMD_TRIGGER_DATA_2      0x00
 
+// Power-up calibration command (AHT20/DHT20 datasheet section 5.4). The
+// sensor ACKs its I2C address as soon as it is powered, but measurement
+// commands are unreliable until this sequence has been sent once.
+#define DHT20_CMD_INIT                0xBE
+#define DHT20_CMD_INIT_DATA_1         0x08
+#define DHT20_CMD_INIT_DATA_2         0x00
+#define DHT20_CMD_SOFT_RESET          0xBA
+
 // Status bit masks
 #define DHT20_STATUS_BUSY_MASK        0x80
 
@@ -22,6 +30,7 @@ void dht20_init(i2c_master_bus_handle_t* pBusHandle,
         .scl_io_num = sclPin,
         .sda_io_num = sdaPin,
         .glitch_ignore_cnt = 7,
+        .trans_queue_depth = 4,
         .flags.enable_internal_pullup = true,
     };
 
@@ -34,6 +43,14 @@ void dht20_init(i2c_master_bus_handle_t* pBusHandle,
     };
 
     ESP_ERROR_CHECK(i2c_master_bus_add_device(*pBusHandle, &i2cDevCfg, pSensorHandle));
+
+    // Power-up calibration sequence (AHT20/DHT20 datasheet). Not error-checked:
+    // if the sensor is absent this must not crash the console (sensor_task
+    // tolerates a missing DHT20 and simply hides the readout).
+    vTaskDelay(pdMS_TO_TICKS(100));
+    uint8_t init_cmd[3] = {DHT20_CMD_INIT, DHT20_CMD_INIT_DATA_1, DHT20_CMD_INIT_DATA_2};
+    i2c_master_transmit(*pSensorHandle, init_cmd, sizeof(init_cmd), -1);
+    vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 void dht20_free(i2c_master_bus_handle_t busHandle,
@@ -89,14 +106,21 @@ esp_err_t dht20_read_safe(i2c_master_dev_handle_t sensorHandle, float* pTemperat
 {
     // Finite 100ms timeouts so a missing sensor fails fast instead of blocking.
     uint8_t trigger[3] = {DHT20_CMD_TRIGGER_MEASUREMENT, DHT20_CMD_TRIGGER_DATA_1, DHT20_CMD_TRIGGER_DATA_2};
-    esp_err_t err = i2c_master_transmit(sensorHandle, trigger, sizeof(trigger), 100);
+    esp_err_t err = i2c_master_transmit(sensorHandle, trigger, sizeof(trigger), -1);
     if (err != ESP_OK) return err;
 
     vTaskDelay(pdMS_TO_TICKS(80));
 
-    uint8_t data[7];
-    err = i2c_master_receive(sensorHandle, data, sizeof(data), 100);
-    if (err != ESP_OK) return err;
+    /* Poll the busy bit instead of trusting a fixed delay: keep re-reading
+     * the 7-byte frame until the sensor reports it is no longer measuring
+     * (bit 0x80 of the status byte clear), or give up after ~200 ms extra. */
+    uint8_t data[7] = {0};
+    for (int attempt = 0; attempt < 10; attempt++) {
+        err = i2c_master_receive(sensorHandle, data, sizeof(data), -1);
+        if (err != ESP_OK) return err;
+        if (!(data[0] & DHT20_STATUS_BUSY_MASK)) break;   /* not busy: data is valid */
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
 
     uint32_t raw_humid = ((uint32_t)data[1] << 12) | ((uint32_t)data[2] << 4) | (((uint32_t)data[3] & 0xF0) >> 4);
     uint32_t raw_temp = (((uint32_t)data[3] & 0x0F) << 16) | ((uint32_t)data[4] << 8) | (uint32_t)data[5];
